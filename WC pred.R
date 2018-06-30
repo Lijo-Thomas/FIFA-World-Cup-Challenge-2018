@@ -7,11 +7,15 @@ library(rpart)
 library(tree)
 library(e1071)
 library(randomForest)
+library(kernlab)
+library(readr)
+library(knitr)
 
 
 teams <- read.csv('My Data WC18.csv')
 wc <- read.csv('data_WC_2018.csv')
 
+kable(teams)
 wc1 <- wc[c(1,3,4)]
 
 
@@ -20,6 +24,7 @@ wc1 <- wc[c(1,3,4)]
 sort(sapply(teams, function(x) sum(is.na(x))), decreasing = T)
 
 sort(sapply(wc1, function(x) sum(is.na(x))), decreasing = T)
+
 
 # Merging the datasets. I'm using left_join in order to preserve the order of the data
 
@@ -55,22 +60,23 @@ train <- wc_all[c(1:16,33:48), ]
 test <- wc_all[17:32,]
 
 
-# Logistic Regression
+#logistic regression
 glm.fit <- glm(Result ~.,
                data = train[-c(1,2,3)],
                family = 'binomial')
 
 glm.probs <- predict(glm.fit, test, type = "response")
-predictions_lr <- ifelse(glm.probs < 0.07, '1', '0')
+predictions_lr <- ifelse(glm.probs < 0.1, '1', '0')
 
 test_resultsc <- as.character(test$Result)
-test_conf <- confusionMatrix(predictions_lr, test_resultsc, positive = '1')
-test_conf
+lr_conf <- confusionMatrix(predictions_lr, test_resultsc, positive = '1')
+lr_conf$byClass[2]
+lr_conf$overall[1]
 
 test$predlr <- predictions_lr
 
 
-# Classification Tree
+#Decision tree
 
 
 tree_1 <-  rpart(Result ~ ., data=train[-c(1,2,3)], method= "class")
@@ -81,12 +87,13 @@ tree_1_pred <- predict(tree_1, test[-c(18,19)], type = "class")
 
 tree_1_pred <- ifelse(tree_1_pred==1,"1","0")
 
-confusionMatrix(tree_1_pred, test_resultsc, positive = "1")
+dt_conf <- confusionMatrix(tree_1_pred, test_resultsc, positive = "1")
+dt_conf
 
 test$preddt <- tree_1_pred
 
 
-# SVM
+#SVM
 
 
 svm <- svm(Result ~.,
@@ -96,26 +103,244 @@ predictions_svm <- predict(svm, test[-c(18,19,20)])
 
 svm_pred <- ifelse(predictions_svm==1,"1","0")
 
-confusionMatrix(svm_pred, test_resultsc, positive = "1")
+svm_conf <- confusionMatrix(svm_pred, test_resultsc, positive = "1")
+svm_conf
 
 test$predsvm <- svm_pred
 
 
-# Random Forest 
 
+
+#Random forest 
 
 
 rf <- randomForest(Result ~. , data = train[-c(1,2,3)])
 
+plot( rf)
+
+predictions_rf <- predict(rf, test, type = 'class')
+
+
+rf_conf<- confusionMatrix(predictions_rf, test_resultsc, positive = "1")
+rf_conf
+
+
+test$predrf <- predictions_rf
+
+
+
+# Evaluating all Models Built
+
+models <- as.data.frame(matrix(c(lr_conf$byClass[1], dt_conf$byClass[1], svm_conf$byClass[1], rf_conf$byClass[1],
+                   lr_conf$byClass[2],dt_conf$byClass[2],svm_conf$byClass[2],rf_conf$byClass[2],
+                   lr_conf$overall[1],dt_conf$overall[1], svm_conf$overall[1], rf_conf$overall[1]),nrow =3 ,ncol=4,byrow=TRUE))
+
+
+colnames(models) <-  c( 'Logistic Regression', 'Decision Trees ', 'SVM', 'Random Forest')
+
+
+models$Metrics <- c('Sensitivity','Specificity',  'Accuracy')
+
+kable(models[,c(5,1,2,3,4)])
+
+
+
+#   |Metrics     | Logistic Regression| Decision Trees |       SVM| Random Forest|
+#   |:-----------|-------------------:|---------------:|---------:|-------------:|
+#   |Sensitivity |           0.2727273|       0.8181818| 0.7272727|     0.8181818|
+#   |Specificity |           0.0000000|       1.0000000| 0.8000000|     0.8000000|
+#   |Accuracy    |           0.1875000|       0.8750000| 0.7500000|     0.8125000|
+
+
+# We will tune SVM and Random Forests to see if we get better results
+
+
+
+#--------------------------------------------------------------------------------------
+############   Hyperparameter tuning and Cross Validation #####################
+#--------------------------------------------------------------------------------------
+
+# 1. SVM
+
+
+#Constructing SVM Models using different kernels to determine the best kernel
+
+
+
+#   Using Linear Kernel
+#-------------------------
+
+
+Model_linear <- ksvm(Result~ ., data = train, scale = FALSE, kernel = "vanilladot")
+Eval_linear<- predict(Model_linear, test)
+
+#confusion matrix - Linear Kernel
+confusionMatrix(Eval_linear,test$Result)
+
+
+#           Accuracy : 0.75         
+#           Sens     : 0.80
+#           Spec     : 0.72
+#           __________________
+
+
+
+
+#    Using RBF Kernel
+#----------------------------
+
+
+Model_RBF <- ksvm(Result~ ., data = train, scale = FALSE, kernel = "rbfdot")
+Eval_RBF<- predict(Model_RBF, test)
+
+#confusion matrix - RBF Kernel
+confusionMatrix(Eval_RBF,test$Result)
+
+
+#           Accuracy : 0.75         
+#           Sens     : 0.80
+#           Spec     : 0.72
+#           __________________
+
+
+
+
+#    Using Kernel Poly
+#----------------------------------
+
+Model_Poly <- ksvm(Result~ ., data = train, scale = FALSE, kernel = "polydot")
+Eval_Poly<- predict(Model_Poly, test)
+
+#confusion matrix - Poly Kernel
+confusionMatrix(Eval_Poly,test$Result)
+
+
+
+#           Accuracy : 0.75         
+#           Sens     : 0.80
+#           Spec     : 0.72
+#           __________________
+
+
+
+#Thus, all three kernels have the same accuracy. Therefore , we will tune the Linear SVM , to find the best parameters.
+
+# Tuning the Hyper parameters
+
+#traincontrol function Controls the computational nuances of the train function.
+# i.e. method =  CV means  Cross Validation.
+#      Number = 2 implies Number of folds in CV.
+
+trainControl <- trainControl(method="cv", number=3)
+
+
+
+
+# Metric <- "Accuracy" implies our Evaluation metric is Accuracy.
+
+metric <- "Accuracy"
+
+
+
+
+#Expand.grid functions takes set of hyperparameters, that we shall pass to our model.
+
+grid <- expand.grid( .C= c(1,5,10) )
+
+
+
+
+
+# We will use the train function from caret package to perform Cross Validation. 
+
+
+#train function takes Target ~ Prediction, Data, Method = Algorithm
+#Metric = Type of metric, tuneGrid = Grid of Parameters,
+# trcontrol = Our traincontrol method.
+
+fit.svm <- train(Result~., data=train, method="svmLinear", metric=metric, 
+                 tuneGrid=grid, trControl=trainControl)
+
+print(fit.svm)
+
+
+plot(fit.svm)
+
+
+
+
+
+#The final values used for the model were C = 1, which can be seen below,
+
+
+Model_linear <- ksvm(Result~ ., data = train, scale = FALSE, kernel = "vanilladot", C = 1)
+Eval_linear<- predict(Model_linear, test)
+
+#confusion matrix - RBF Kernel
+confusionMatrix(Eval_linear,test$Result)
+
+
+#           Accuracy : 0.75         
+#           Sens     : 0.80
+#           Spec     : 0.72
+#           __________________
+
+
+# Thus, this model will be the FINAL SVM MODEL we use. 
+
+
+
+
+# 2. Random Forest
+#   _______________
+
+#-----------------------------------------------------
+# Tuning the Hyper Parameters of the Random Forest 
+#-----------------------------------------------------
+
+
+# Grid Search
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3, search="grid")
+metric <- "Accuracy"
+set.seed(100)
+tunegrid <- expand.grid(.mtry=c(1:15))
+rf_gridsearch <- train(Result ~ ., data=train, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control)
+print(rf_gridsearch)
+plot(rf_gridsearch)
+
+
+# mtry = 4 is the best
+
+
+# So our final model is
+
+rf <- randomForest(Result ~. , data = train[-c(1,2,3)], mtry = 4, ntree = 1000)
+
+plot( rf)
 
 predictions_rf <- predict(rf, test, type = 'class')
 
 
 confusionMatrix(predictions_rf, test_resultsc, positive = "1")
 
-
 test$predrf <- predictions_rf
 
+#             Accuracy    : 0.8125
+#             Sensitivity : 0.8182          
+#             Specificity : 0.8000 
+#           _____________________________
+
+
+# This is the best combination of Accuracy , Sensitivity and Specificity that we have got. We will use this as our final model.
+
+
+
+#---------------------------------------------------------------------------------------------------------------------------
+
+# -------------
+# PREDICTIONS
+# -------------
 
 
 # Predicting for RO16
@@ -140,13 +365,12 @@ colnames(wc_r16all)[c(10:16)] <- c('AvgGS_T2','AvgGC_T2', 'GD_T2', 'Wins_T2', 'L
 
 
 predictions_rf16 <- predict(rf, wc_r16all, type = 'class')
-predictions_rf16svm <- predict(svm, wc_r16all)
+
 
 
 
 
 wc_r16all$pred <- predictions_rf16
-wc_r16all$predsvm <- predictions_rf16svm
 
 
 
@@ -180,13 +404,11 @@ colnames(wc_qfall)[c(10:16)] <- c('AvgGS_T2','AvgGC_T2', 'GD_T2', 'Wins_T2', 'Lo
 
 
 predictions_qf <- predict(rf, wc_qfall, type = 'class')
-predictions_qfsvm <- predict(svm, wc_qfall)
-
 
 
 
 wc_qfall$pred <- predictions_qf
-wc_qfall$predsvm <- predictions_qfsvm
+
 
 
 
@@ -220,15 +442,11 @@ colnames(wc_sfall)[c(10:16)] <- c('AvgGS_T2','AvgGC_T2', 'GD_T2', 'Wins_T2', 'Lo
 
 # Predicting results
 
-
-
 predictions_sf <- predict(rf, wc_sfall, type = 'class')
-predictions_sfsvm <- predict(svm, wc_sfall)
-
 
 
 wc_sfall$pred <- predictions_sf
-wc_sfall$predsvm <- predictions_sfsvm
+
 
 
 
@@ -266,12 +484,12 @@ colnames(wc_fall)[c(10:16)] <- c('AvgGS_T2','AvgGC_T2', 'GD_T2', 'Wins_T2', 'Los
 
 
 predictions_f <- predict(rf, wc_fall, type = 'class')
-predictions_fsvm <- predict(svm, wc_fall)
+
 
 
 
 wc_fall$pred <- predictions_f
-wc_fall$predsvm <- predictions_fsvm
+
 
 
 
