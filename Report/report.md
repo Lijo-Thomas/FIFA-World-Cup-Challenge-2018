@@ -6,7 +6,7 @@ __Objective__:
 
 
 
-__Data__: The Data was assembled from multiple sources, some of the from Kaggle, others come from FIFA website, and individual team information has been manually imputed.
+__Data__: The Data was assembled from multiple sources, some from Kaggle and the  FIFA website, and individual team information was  manually imputed.
 
 
 
@@ -20,9 +20,9 @@ __Feature Selection__: This World Cup has been unique for so many reasons. There
 6. Average Odds 
 7. Pressure on the Team to win the World Cup
 
+I selected betting Odds beacuse it usually displays the dominance and form of a team. Pressure on teams to win was something I added after much research. All the other variables were entered manually from the data sources. Plenty of other factors like , _Wins in Qualifiers_, _Head-to-head_, _FIFA 18 team Ranking_, etc were considered, but ultimately deemed unnecessary.
 
-
-__Team mate__: Joji John Thomas
+__Team Member__: Joji John Thomas
 
 
 # Process
@@ -108,18 +108,31 @@ __4. Only three teams manged to keep a 100% win record. They were,__
 # Model Training and Evaluation
 ### Train-Test ratio
 We split data into 70:30
-### Model
+### Models Used
 1. Logistic Regression
-2. SVM
-3. Random Random Forest
+2. Decision Trees
+3. SVM
+3. Random Forest
 
 
+First, we ran a baseline model for each of these algorithms to determine the model with the best _Accuracy_, _Sensitivity_ and _Specificity_.
 
+
+This was how the models performed.
+
+|Metrics     | Logistic Regression| Decision Trees |       SVM| Random Forest|
+|:-----------|-------------------:|---------------:|---------:|-------------:|
+|Sensitivity |           0.2727273|       0.8181818| 0.7272727|     0.8181818|
+|Specificity |           0.0000000|       1.0000000| 0.8000000|     0.8000000|
+|Accuracy    |           0.1875000|       0.8750000| 0.7500000|     0.8125000|
+
+
+Based on this, we tuned the hyper parameters of SVM and Random Forest to see if we could get better results. After careful consideration, we chose Random Forests as the final model.
 
 
 # Prediction
 
-Based on our Model, these were our final predictions,
+Based on our Final Model, these were our final predictions,
 
 ![predictions](https://github.com/Lijo-Thomas/FIFA-World-Cup-Challenge-2018/blob/master/Images/Bracket.png)
 
